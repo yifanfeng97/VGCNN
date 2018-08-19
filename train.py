@@ -3,6 +3,7 @@ import torch
 import config
 import models
 import os.path as osp
+from test import validate
 from utils import meter
 from torch import nn
 from torch import optim
@@ -47,46 +48,16 @@ def train(train_loader, net, criterion, optimizer, epoch):
     print(f'prec at epoch {epoch}: {prec.value(1)} ')
 
 
-def validate(val_loader, net, epoch):
-    """
-    validation for one epoch on the val set
-    """
-    batch_time = meter.TimeMeter(True)
-    data_time = meter.TimeMeter(True)
-    prec = meter.ClassErrorMeter(topk=[1], accuracy=True)
-
-    # testing mode
-    net.eval()
-
-    for i, (views, labels) in enumerate(val_loader):
-        batch_time.reset()
-        # bz x 12 x 3 x 224 x 224
-        views = views.to(device=config.device)
-        labels = labels.to(device=config.device)
-
-        preds = net(views)  # bz x C x H x W
-
-        prec.add(preds.data, labels.data)
-
-        if i % config.print_freq == 0:
-            print(f'Epoch: [{epoch}][{i}/{len(val_loader)}]\t'
-                  f'Batch Time {batch_time.value():.3f}\t'
-                  f'Epoch Time {data_time.value():.3f}\t'
-                  f'Prec@1 {prec.value(1):.3f}\t')
-
-    print(f'mean class accuracy at epoch {epoch}: {prec.value(1)} ')
-    return prec.value(1)
-
-
 def save_record(epoch, prec1, net: nn.Module):
     state_dict = net.state_dict()
     torch.save(state_dict, osp.join(config.view_net.ckpt_record_folder, f'epoch{epoch}_{prec1:.2f}.pth'))
 
 
-def save_ckpt(epoch, best_prec1, net, optimizer, training_conf=config.view_net):
+def save_ckpt(epoch, best_prec1, best_map, net, optimizer, training_conf=config.view_net):
     ckpt = dict(
         epoch=epoch,
         best_prec1=best_prec1,
+        best_map=best_map,
         model=net.module.state_dict(),
         optimizer=optimizer.state_dict(),
         training_conf=training_conf
@@ -110,6 +81,7 @@ def main():
     val_loader = DataLoader(val_dataset, batch_size=config.view_net.train.batch_sz,
                             num_workers=config.num_workers,shuffle=True)
 
+    best_map = 0
     best_prec1 = 0
     resume_epoch = 0
     # create model
@@ -124,9 +96,10 @@ def main():
 
     if config.view_net.train.resume:
         print(f'loading pretrained model from {config.view_net.ckpt_file}')
-        checkpoint = torch.load(config.view_net.ckpt_file)
+        checkpoint = torch.load(config.view_net.ckpt_file, 'cpu')
         net.module.load_state_dict(checkpoint['model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
+        best_map = checkpoint['best_map']
         best_prec1 = checkpoint['best_prec1']
         if config.view_net.train.resume_epoch is not None:
             resume_epoch = config.view_net.train.resume_epoch
@@ -149,16 +122,20 @@ def main():
         train(train_loader, net, criterion, optimizer, epoch)
 
         with torch.no_grad():
-            prec1 = validate(val_loader, net, epoch)
+            prec1, mAP = validate(val_loader, net)
 
         # save checkpoints
         if best_prec1 < prec1:
             best_prec1 = prec1
-            save_ckpt(epoch, best_prec1, net, optimizer)
+            save_ckpt(epoch, best_prec1, best_map, net, optimizer)
 
-        save_record(epoch, prec1, net.module)
+        if best_map < mAP:
+            best_map = mAP
+
+        # save_record(epoch, prec1, net.module)
         print('curr accuracy: ', prec1)
         print('best accuracy: ', best_prec1)
+        print('best map: ', best_map)
 
     print('Train Finished!')
 

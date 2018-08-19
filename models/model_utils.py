@@ -34,19 +34,15 @@ class conv_2d(nn.Module):
 
 
 class fc_layer(nn.Module):
-    def __init__(self, in_ch, out_ch, bn=True):
+    def __init__(self, in_ch, out_ch, bn=True, relu=True):
         super(fc_layer, self).__init__()
+        self.fc = [nn.Linear(in_ch, out_ch)]
         if bn:
-            self.fc = nn.Sequential(
-                nn.Linear(in_ch, out_ch),
-                nn.BatchNorm1d(out_ch),
-                nn.ReLU(inplace=True)
-            )
-        else:
-            self.fc = nn.Sequential(
-                nn.Linear(in_ch, out_ch),
-                nn.ReLU(inplace=True)
-            )
+            self.fc.append(nn.BatchNorm1d(out_ch))
+        if relu:
+            self.fc.append(nn.ReLU(inplace=True))
+
+        self.fc = nn.Sequential(*self.fc)
 
     def forward(self, x):
         x = self.fc(x)
@@ -108,8 +104,7 @@ def gather_neighbor(x, nn_idx, n_neighbor):
     return pc_n
 
 
-# def forward(self, x):
-def get_edge_feature(x, n_neighbor):
+def get_feature_based_edge_feature(x, n_neighbor):
     x = torch.transpose(x, dim0=1, dim1=2)
     if len(x.size()) == 3:
         x = x.unsqueeze(3)
@@ -121,6 +116,19 @@ def get_edge_feature(x, n_neighbor):
 
     return edge_feature
 
+
+def get_angle_based_edge_feature(x, n_neighbor):
+    x = torch.transpose(x, dim0=1, dim1=2)
+    if len(x.size()) == 3:
+        x = x.unsqueeze(3)
+    adj_matrix = pairwise_distance(x)
+    _, nn_idx = torch.topk(adj_matrix, n_neighbor, dim=2, largest=False)
+    nn_idx = torch.Tensor([])
+    point_cloud_neighbors = gather_neighbor(x, nn_idx, n_neighbor)
+    point_cloud_center = x.expand(-1, -1, -1, n_neighbor)
+    edge_feature = torch.cat((point_cloud_center, point_cloud_neighbors - point_cloud_center), dim=1)
+
+    return edge_feature
 
 
 class Max_Viewpooling(nn.Module):
@@ -146,9 +154,28 @@ class Feature_Viewpooling(nn.Module):
         self.conv2d1 = models.conv_2d(self.feature_len*2, self.feature_len, 1)
 
     def forward(self, x):
-        x = get_edge_feature(x, self.n_neig)
+        x = get_feature_based_edge_feature(x, self.n_neig)
         x = self.conv2d1(x)
         x, _ = torch.max(x, dim=-1, keepdim=True)
         x, _ = torch.max(x, dim=2, keepdim=True)
         return x
 
+
+class Angle_Viewpooling(nn.Module):
+    def __init__(self):
+        super(Angle_Viewpooling, self).__init__()
+        self.n_neig = config.view_net.n_neighbor
+        if config.base_model_name in (models.VGG13, models.VGG13BN, models.ALEXNET):
+            self.feature_len = 4096
+        elif config.base_model_name in (models.RESNET50, models.RESNET101, models.INCEPTION_V3):
+            self.feature_len = 2048
+        else:
+            raise NotImplementedError(f'{base_model_name} is not supported models')
+        self.conv2d1 = models.conv_2d(self.feature_len*2, self.feature_len, 1)
+
+    def forward(self, x):
+        x = get_angle_based_edge_feature(x, self.n_neig)
+        x = self.conv2d1(x)
+        x, _ = torch.max(x, dim=-1, keepdim=True)
+        x, _ = torch.max(x, dim=2, keepdim=True)
+        return x

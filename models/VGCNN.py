@@ -16,12 +16,12 @@ class BaseFeatureNet(nn.Module):
             self.feature_len = 4096
             self.features = base_model.features
             self.fc_features = nn.Sequential(*list(base_model.classifier.children())[:-1])
-
         elif base_model_name == models.VGG13BN:
             base_model = torchvision.models.vgg13_bn(pretrained=pretrained)
             self.feature_len = 4096
             self.features = base_model.features
             self.fc_features = nn.Sequential(*list(base_model.classifier.children())[:-1])
+            # self.fc_features = nn.Sequential(*list(base_model.classifier.children())[:-1])
 
         elif base_model_name == models.ALEXNET:
             base_model = torchvision.models.alexnet(pretrained=pretrained)
@@ -68,8 +68,11 @@ class BaseClassifierNet(nn.Module):
     def __init__(self, base_model_name=models.VGG13, num_classes=40, pretrained=True):
         super(BaseClassifierNet, self).__init__()
         base_model_name = base_model_name.upper()
-        if base_model_name in (models.VGG13, models.VGG13BN, models.ALEXNET):
+        if base_model_name in models.ALEXNET:
             self.feature_len = 4096
+        elif base_model_name in (models.VGG13, models.VGG13BN):
+            self.feature_len = 4096
+            # self.feature_len = 25088
         elif base_model_name in (models.RESNET50, models.RESNET101, models.INCEPTION_V3):
             self.feature_len = 2048
         else:
@@ -97,14 +100,17 @@ class VGCNN(nn.Module):
         elif config.aggrategor == models.FeatureBuildGraph:
             self.aggregator = models.Feature_Viewpooling()
         elif config.aggrategor == models.AngleBuildGraph:
-            raise NotImplementedError
+            self.aggregator = models.Angle_Viewpooling()
         else:
             raise NotImplementedError
 
-    def forward(self, x):
+    def forward(self, x, get_ft=False):
         x = self.features(x)
-        x = self.aggregator(x)
-        x = self.classifier(x)
-        return x
+        ft = self.aggregator(x)
+        x = self.classifier(ft)
+        if get_ft:
+            return x, ft
+        else:
+            return x
 
 
