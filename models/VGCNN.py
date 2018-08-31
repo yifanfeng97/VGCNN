@@ -15,13 +15,35 @@ class BaseFeatureNet(nn.Module):
             base_model = torchvision.models.vgg13(pretrained=pretrained)
             self.feature_len = 4096
             self.features = base_model.features
-            self.fc_features = nn.Sequential(*list(base_model.classifier.children())[:-1])
+            if config.new_model:
+                self.fc_features = models.fc_layer(512 * 6 * 6, 512)
+            else:
+                self.fc_features = nn.Sequential(*list(base_model.classifier.children())[:-1])
         elif base_model_name == models.VGG13BN:
             base_model = torchvision.models.vgg13_bn(pretrained=pretrained)
             self.feature_len = 4096
             self.features = base_model.features
-            self.fc_features = nn.Sequential(*list(base_model.classifier.children())[:-1])
+            if config.new_model:
+                self.fc_features = models.fc_layer(512 * 6 * 6, 512)
+            else:
+                self.fc_features = nn.Sequential(*list(base_model.classifier.children())[:-1])
             # self.fc_features = nn.Sequential(*list(base_model.classifier.children())[:-1])
+        elif base_model_name == models.VGG11BN:
+            base_model = torchvision.models.vgg11_bn(pretrained=pretrained)
+            self.feature_len = 4096
+            self.features = base_model.features
+            if config.new_model:
+                # self.fc_features = models.fc_layer(512 * 6 * 6, 512)
+                self.fc_features = nn.Sequential(
+                    nn.Linear(512 * 6 * 6, 4096),
+                    nn.ReLU(True),
+                    nn.Dropout(),
+                    nn.Linear(4096, 4096),
+                    nn.ReLU(True),
+                    nn.Dropout()
+                )
+            else:
+                self.fc_features = nn.Sequential(*list(base_model.classifier.children())[:-1])
 
         elif base_model_name == models.ALEXNET:
             base_model = torchvision.models.alexnet(pretrained=pretrained)
@@ -55,6 +77,10 @@ class BaseFeatureNet(nn.Module):
 
         # forward
         x = self.features(x)
+        # with torch.no_grad():
+        #     x = self.features[:1](x)
+        # x = self.features[1:](x)
+
         x = x.view(x.size(0), -1)
         x = self.fc_features(x) if self.fc_features is not None else x
 
@@ -70,8 +96,12 @@ class BaseClassifierNet(nn.Module):
         base_model_name = base_model_name.upper()
         if base_model_name in models.ALEXNET:
             self.feature_len = 4096
-        elif base_model_name in (models.VGG13, models.VGG13BN):
-            self.feature_len = 4096
+        elif base_model_name in (models.VGG13, models.VGG13BN, models.VGG11BN):
+            if config.new_model:
+                # self.feature_len = 512
+                self.feature_len = 4096
+            else:
+                self.feature_len = 4096
             # self.feature_len = 25088
         elif base_model_name in (models.RESNET50, models.RESNET101, models.INCEPTION_V3):
             self.feature_len = 2048
@@ -106,6 +136,7 @@ class VGCNN(nn.Module):
 
     def forward(self, x, get_ft=False):
         x = self.features(x)
+
         ft = self.aggregator(x)
         x = self.classifier(ft)
         if get_ft:

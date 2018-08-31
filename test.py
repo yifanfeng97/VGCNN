@@ -28,6 +28,7 @@ def validate(val_loader, net):
     batch_time = meter.TimeMeter(True)
     data_time = meter.TimeMeter(True)
     prec = meter.ClassErrorMeter(topk=[1], accuracy=True)
+    retrieval = meter.RetrievalMAPMeter()
     ft_all, lbl_all=None, None
 
     # testing mode
@@ -39,11 +40,13 @@ def validate(val_loader, net):
         views = views.to(device=config.device)
         labels = labels.to(device=config.device)
 
+
         preds, fts = net(views, get_ft=True)  # bz x C x H x W
 
         prec.add(preds.detach(), labels.detach())
-        ft_all = append(ft_all, fts.detach())
-        lbl_all = append(lbl_all, labels.detach(), flaten=True)
+        retrieval.add(fts.detach(), labels.detach())
+        # ft_all = append(ft_all, fts.detach())
+        # lbl_all = append(lbl_all, labels.detach(), flaten=True)
 
         if i % config.print_freq == 0:
             print(f'[{i}/{len(val_loader)}]\t'
@@ -51,8 +54,8 @@ def validate(val_loader, net):
                   f'Epoch Time {data_time.value():.3f}\t'
                   f'Prec@1 {prec.value(1):.3f}\t')
 
-    mAP = cal_map(ft_all, lbl_all)
-
+    # mAP = cal_map(ft_all, lbl_all)
+    mAP = retrieval.mAP()
     print(f'mean class accuracy : {prec.value(1)} ')
     print(f'Retrieval mAP : {mAP} ')
     return prec.value(1), mAP

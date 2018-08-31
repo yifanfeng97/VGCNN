@@ -68,6 +68,7 @@ def save_ckpt(epoch, best_prec1, best_map, net, optimizer, training_conf=config.
 def main():
     print('Training Process\nInitializing...\n')
     config.init_env()
+    config.print_paras()
 
     train_dataset = view_data(config.view_net.data_root,
                                        status=STATUS_TRAIN,
@@ -106,7 +107,8 @@ def main():
         else:
             resume_epoch = checkpoint['epoch'] + 1
 
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 5, 0.5)
+    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 3, 0.5)
+    # lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [5, 9, 12], 0.3)
     criterion = nn.CrossEntropyLoss()
     criterion = criterion.to(device=config.device)
 
@@ -125,12 +127,12 @@ def main():
             prec1, mAP = validate(val_loader, net)
 
         # save checkpoints
+        if best_map < mAP:
+            best_map = mAP
+
         if best_prec1 < prec1:
             best_prec1 = prec1
             save_ckpt(epoch, best_prec1, best_map, net, optimizer)
-
-        if best_map < mAP:
-            best_map = mAP
 
         # save_record(epoch, prec1, net.module)
         print('curr accuracy: ', prec1)

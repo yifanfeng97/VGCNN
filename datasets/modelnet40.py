@@ -1,5 +1,6 @@
 import os
 import torch
+import config
 import models
 import os.path as osp
 from PIL import Image
@@ -36,10 +37,13 @@ class view_data(Dataset):
         self.view_list = []
         self.lbl_list = []
 
-        if base_model_name in (models.ALEXNET, models.VGG13, models.VGG13BN):
-            self.img_sz = 224
+        if base_model_name in (models.ALEXNET, models.VGG13, models.VGG13BN, models.VGG11BN):
+            if config.new_model:
+                self.img_sz = 192
+            else:
+                self.img_sz = 224
         elif base_model_name in (models.RESNET50, models.RESNET101):
-            self.img_sz = 227
+            self.img_sz = 224
         elif base_model_name in models.INCEPTION_V3:
             self.img_sz = 299
         else:
